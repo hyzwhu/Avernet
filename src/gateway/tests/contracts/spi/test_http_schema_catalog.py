@@ -229,13 +229,27 @@ async def test_refresh_all_async_bare_exception_is_caught() -> None:
     assert catalog.current("x") == {}
 
 
-def test_get_client_creates_new_when_none_set() -> None:
-    catalog = _new_catalog({})
-    assert catalog._client is None
+def test_refresh_closes_transient_client() -> None:
+    catalog = _new_catalog({"bots": "http://example.com/bots.json"})
+    transient = _mock_client(_make_response(200, {"version": 1}))
+    transient.__aenter__.return_value = transient
 
-    client = catalog._get_client()
-    assert isinstance(client, httpx.AsyncClient)
-    assert client.timeout == httpx.Timeout(30.0)
+    with patch("httpx.AsyncClient", return_value=transient):
+        assert catalog.refresh("bots") is True
+
+    transient.__aexit__.assert_awaited_once()
+
+
+def test_refresh_does_not_close_shared_client() -> None:
+    catalog = _new_catalog({"bots": "http://example.com/bots.json"})
+    shared = _mock_client(_make_response(200, {"version": 1}))
+    catalog._client = shared
+
+    with patch("httpx.AsyncClient") as client_factory:
+        assert catalog.refresh("bots") is True
+
+    client_factory.assert_not_called()
+    shared.__aexit__.assert_not_awaited()
 
 
 def test_build_conditional_headers_with_both() -> None:

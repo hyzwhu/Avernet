@@ -86,7 +86,14 @@ class HttpSchemaCatalog(SchemaCatalog):
                 )
 
     async def _refresh_async(self, domain: str, url: str) -> bool:
-        client = self._get_client()
+        if self._client is not None:
+            return await self._refresh_with_client(domain, url, self._client)
+        async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
+            return await self._refresh_with_client(domain, url, client)
+
+    async def _refresh_with_client(
+        self, domain: str, url: str, client: httpx.AsyncClient
+    ) -> bool:
         headers = _build_conditional_headers(
             self._etags.get(domain), self._last_modified.get(domain)
         )
@@ -128,11 +135,6 @@ class HttpSchemaCatalog(SchemaCatalog):
         _store_conditional_headers(response, domain, self._etags, self._last_modified)
         self._cache[domain] = parsed
         return True
-
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is not None:
-            return self._client
-        return httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT)
 
 
 def _run_sync(coro: Any) -> bool:
